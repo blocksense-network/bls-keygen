@@ -51,7 +51,10 @@
         in
         {
           devShells.default = pkgs.mkShell {
-            packages = [ rustToolchain ];
+            packages = [
+              rustToolchain
+              inputs'.mcl-nixos-modules.checks.foundry
+            ];
           };
 
           packages.default = craneLib.buildPackage {
