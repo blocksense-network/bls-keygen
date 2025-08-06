@@ -1,8 +1,9 @@
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 
 use clap::Parser;
+use rand::RngCore;
 use serde::Serialize;
 
 use hex::encode;
@@ -66,17 +67,11 @@ fn main() {
     println!("Generated {} key pairs.", args.count);
 }
 
-fn generate_random_array() -> [u8; 35] {
-    let mut file = File::open("/dev/random").unwrap();
-    let mut array = [0u8; 35];
-    file.read_exact(&mut array).unwrap();
-
-    array
-}
-
 fn generate_keys() -> (SecretKey, PublicKey) {
-    let ikm: &[u8; 35] = &generate_random_array();
-    let sk = SecretKey::key_gen(ikm, &[]).expect("Failed to generate secret key");
+    let mut ikm = [0u8; 64];
+    rand::thread_rng().fill_bytes(&mut ikm);
+
+    let sk = SecretKey::key_gen(&ikm, &[]).expect("Failed to generate secret key");
     let pk = sk.sk_to_pk();
     (sk, pk)
 }
