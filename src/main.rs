@@ -6,7 +6,7 @@ use clap::Parser;
 use rand::RngCore;
 use serde::Serialize;
 
-use hex::encode;
+use const_hex::encode;
 
 use blst::min_pk::PublicKey;
 use blst::min_pk::SecretKey;
