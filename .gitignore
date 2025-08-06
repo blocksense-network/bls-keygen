@@ -170,3 +170,6 @@ libs/ts/ui/storybook-static
 # wasm artifacts
 .spin/
 *.wasm
+
+# Default output directory for generated keys
+generated_keys/
