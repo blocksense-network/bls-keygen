@@ -46,25 +46,6 @@ OPTIONS
 
 }
 
-pub fn to_hex_string(bytes: Vec<u8>) -> String {
-    bytes
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<Vec<_>>()
-        .join("")
-}
-
-pub fn to_hex_string_p(mut bytes: Vec<u8>, padding_to: Option<usize>) -> String {
-    if let Some(p) = padding_to {
-        bytes.resize(p, 0);
-    }
-    bytes
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<Vec<_>>()
-        .join("")
-}
-
 fn generate_random_array() -> [u8; 35] {
 
     let mut file = File::open("/dev/random").unwrap();
@@ -73,7 +54,6 @@ fn generate_random_array() -> [u8; 35] {
 
     array
 }
-
 
 fn generate_keys() -> (SecretKey, PublicKey) {
     let ikm: &[u8; 35] = &generate_random_array();
