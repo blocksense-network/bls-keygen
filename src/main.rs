@@ -1,49 +1,36 @@
-use blst::min_pk::PublicKey;
-use blst::min_pk::SecretKey;
-use hex::encode;
 use std::fs::File;
 use std::io::Read;
-use std::env;
+
+use clap::Parser;
+
+use hex::encode;
+
+use blst::min_pk::PublicKey;
+use blst::min_pk::SecretKey;
+
+/// BLS key generation utility
+#[derive(Parser, Debug)]
+#[command(name = "gen_bls_keys")]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Number of keys to generate
+    #[arg(short = 'c', long = "count", default_value = "1")]
+    count: usize,
+}
 
 fn main() {
-    // Step 1: Generate keys
-    let (sk, pk) = generate_keys();
-    let mut keys_count = 1;
-    let mut args = env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match &arg[..] {
-            "-c" | "--count" => {
-                keys_count = args.next().expect("Value expected for count!").parse().expect("Int value needed!");
-            }
-            "--help" => {
-                println!(
-                    "Usage:
-gen_bls_keys [options] [args]
+    let args = Args::parse();
 
-OPTIONS
-  --help                     show list of command-line options
-  -c, --count                specify sequencer's config file path"
-                );
-                return;
-            }
-            _ => {
-                if arg.starts_with('-') {
-                    println!("Unkown argument {}", arg);
-                } else {
-                    println!("Unkown positional argument {}", arg);
-                }
-            }
-        }
-    }
-
-    for n in 0..keys_count {
+    for n in 0..args.count {
+        // Generate keys for each iteration
+        let (sk, pk) = generate_keys();
         let pk_hex = serialize_public_key(&pk);
+
         println!("{}", n);
         println!("----------------------------------------------------------------------------------------------------------------");
         println!("Secret key (hex): {}", serialize_priv_key(&sk));
         println!("Public key (hex): {}", pk_hex);
     }
-
 }
 
 fn generate_random_array() -> [u8; 35] {
