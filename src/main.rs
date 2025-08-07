@@ -40,24 +40,24 @@ fn main() {
 
     let mut public_keys = Vec::new();
 
-    for n in 0..args.count {
+    for n in 1..=args.count {
         let bls_key_pair = generate_bls_key();
         let eth_key_pair = generate_ethereum_key();
 
         write(
-            private_keys_dir.join(format!("key{}_bls", n + 1)),
+            private_keys_dir.join(format!("key{}_bls", n)),
             bls_key_pair.private_key,
         )
         .expect("Failed to write BLS private key");
 
         write(
-            private_keys_dir.join(format!("key{}_eth", n + 1)),
+            private_keys_dir.join(format!("key{}_eth", n)),
             eth_key_pair.private_key,
         )
         .expect("Failed to write Ethereum private key");
 
         public_keys.push(KeyEntry {
-            id: n + 1,
+            id: n,
             bls_public_key: bls_key_pair.public_key,
             ethereum_address: eth_key_pair.address,
         });
