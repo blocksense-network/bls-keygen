@@ -1,5 +1,5 @@
 use std::fs::{create_dir_all, write};
-use std::path::Path;
+use std::path::PathBuf;
 
 use clap::Parser;
 use const_hex::{encode, encode_prefixed};
@@ -16,12 +16,12 @@ use tiny_keccak::{Hasher, Keccak};
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Number of keys to generate
-    #[arg(short = 'c', long = "count", default_value = "1")]
+    #[arg(short = 'c', long = "count", default_value_t = 1)]
     count: usize,
 
     /// Output directory for the generated keys
     #[arg(short = 'o', long = "output-dir", default_value = "./generated_keys")]
-    output_dir: String,
+    output_dir: PathBuf,
 }
 
 #[derive(Serialize)]
@@ -38,8 +38,7 @@ struct KeyEntry {
 fn main() {
     let args = Args::parse();
 
-    let output_path = Path::new(&args.output_dir);
-    let private_keys_dir = output_path.join("private-keys");
+    let private_keys_dir = args.output_dir.join("private-keys");
     create_dir_all(&private_keys_dir).expect("Failed to create private-keys directory");
 
     let mut public_keys = Vec::new();
@@ -68,12 +67,16 @@ fn main() {
     }
 
     write(
-        output_path.join("public-keys.json"),
+        args.output_dir.join("public-keys.json"),
         serde_json::to_string_pretty(&public_keys).expect("Failed to serialize public keys"),
     )
     .expect("Failed to write public-keys.json");
 
-    println!("Generated {} key pairs in {}", args.count, args.output_dir);
+    println!(
+        "Generated {} key pairs in {}",
+        args.count,
+        args.output_dir.display()
+    );
 }
 
 struct BlsKeyPair {
