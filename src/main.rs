@@ -10,17 +10,17 @@ use blst::min_pk::SecretKey as BlsPrivateKey;
 use k256::ecdsa::{SigningKey as EcdsaPrivateKey, VerifyingKey as EcdsaPublicKey};
 use tiny_keccak::{Hasher, Keccak};
 
-/// BLS key generation utility
+/// BLS and ECSDA (secp256k1) key generation utility
 #[derive(Parser, Debug)]
 #[command(name = "gen_bls_keys")]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Number of keys to generate
-    #[arg(short = 'c', long = "count", default_value_t = 1)]
+    #[arg(short, long, default_value_t = 1)]
     count: usize,
 
     /// Output directory for the generated keys
-    #[arg(short = 'o', long = "output-dir", default_value = "./generated_keys")]
+    #[arg(short, long, default_value = "./generated_keys")]
     output_dir: PathBuf,
 }
 
