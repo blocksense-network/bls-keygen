@@ -25,13 +25,10 @@ struct Args {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
 struct KeyEntry {
     id: usize,
-
-    #[serde(rename = "bls-public-key")]
     bls_public_key: String,
-
-    #[serde(rename = "ethereum-address")]
     ethereum_address: String,
 }
 
