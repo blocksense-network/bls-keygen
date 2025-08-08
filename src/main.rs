@@ -1,16 +1,23 @@
-use std::fs::{create_dir_all, write};
+use std::fs::{create_dir_all, write, File};
+use std::io::Write as IoWrite;
 use std::path::PathBuf;
+use std::str::FromStr;
 
+use anyhow::{anyhow, Error, Ok, Result};
 use clap::Parser;
-use const_hex::{encode, encode_prefixed};
-use rand::RngCore;
+use rand_core::CryptoRngCore;
 use serde::Serialize;
 
-use blst::min_pk::SecretKey as BlsPrivateKey;
-use k256::ecdsa::{SigningKey as EcdsaPrivateKey, VerifyingKey as EcdsaPublicKey};
-use tiny_keccak::{Hasher, Keccak};
+use age::{
+    ssh::Recipient as SshRecipient, x25519::Recipient as AgeRecipient, Encryptor, Recipient,
+};
 
-/// BLS and ECSDA (secp256k1) key generation utility
+mod bls;
+mod ecdsa;
+use crate::bls::BlsKeyPair;
+use crate::ecdsa::EthereumKeyPair;
+
+/// BLS (BLS12-381) and ECSDA (secp256k1) keygen utility
 #[derive(Parser, Debug)]
 #[command(name = "gen_bls_keys")]
 #[command(author, version, about, long_about = None)]
@@ -22,6 +29,10 @@ struct Args {
     /// Output directory for the generated keys
     #[arg(short, long, default_value = "./generated_keys")]
     output_dir: PathBuf,
+
+    /// Recipients' public keys (age or SSH) for encrypting private keys
+    #[arg(short, long, value_name = "RECIPIENT")]
+    recipients: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -32,34 +43,57 @@ struct KeyEntry {
     ethereum_address: String,
 }
 
-fn main() {
+trait Identity {
+    /// Returns the public part of the key (e.g., public key for BLS, address
+    /// for Ethereum)
+    fn public_part(&self) -> &str;
+
+    /// Returns the private key as a string
+    fn private_key(&self) -> &str;
+
+    /// Returns the type of the key (e.g., "bls" or "eth")
+    fn key_type(&self) -> &str;
+
+    /// Generates a random key pair
+    fn random(rng: &mut impl CryptoRngCore) -> Self where Self: Sized;
+}
+
+fn main() -> Result<()> {
     let args = Args::parse();
 
     let private_keys_dir = args.output_dir.join("private-keys");
     create_dir_all(&private_keys_dir).expect("Failed to create private-keys directory");
 
+    let recipients = args
+        .recipients
+        .iter()
+        .map(parse_age_recipient)
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut rng = &mut rand::thread_rng();
     let mut public_keys = Vec::new();
+    for id in 1..=args.count {
+        let bls_key_pair = Box::new(BlsKeyPair::random(&mut rng));
+        let eth_key_pair = Box::new(EthereumKeyPair::random(&mut rng));
 
-    for n in 1..=args.count {
-        let bls_key_pair = generate_bls_key();
-        let eth_key_pair = generate_ethereum_key();
+        write_private_key(
+            &private_keys_dir,
+            id,
+            bls_key_pair.as_ref(),
+            recipients.as_slice(),
+        );
 
-        write(
-            private_keys_dir.join(format!("key{}_bls", n)),
-            bls_key_pair.private_key,
-        )
-        .expect("Failed to write BLS private key");
-
-        write(
-            private_keys_dir.join(format!("key{}_eth", n)),
-            eth_key_pair.private_key,
-        )
-        .expect("Failed to write Ethereum private key");
+        write_private_key(
+            &private_keys_dir,
+            id,
+            eth_key_pair.as_ref(),
+            recipients.as_slice(),
+        );
 
         public_keys.push(KeyEntry {
-            id: n,
-            bls_public_key: bls_key_pair.public_key,
-            ethereum_address: eth_key_pair.address,
+            id,
+            bls_public_key: (*bls_key_pair).public_part().to_owned(),
+            ethereum_address: (*eth_key_pair).public_part().to_owned(),
         });
     }
 
@@ -74,48 +108,52 @@ fn main() {
         args.count,
         args.output_dir.display()
     );
+    Ok(())
 }
 
-struct BlsKeyPair {
-    private_key: String,
-    public_key: String,
+fn parse_age_recipient(s: impl AsRef<str>) -> Result<Box<dyn Recipient>> {
+    AgeRecipient::from_str(s.as_ref())
+        .map_err(Error::msg)
+        .map(|r| Box::new(r) as Box<dyn Recipient>)
+        .or_else(|_| {
+            SshRecipient::from_str(s.as_ref())
+                .map_err(|e| anyhow!("{:?}", e))
+                .map(|r| Box::new(r) as Box<dyn Recipient>)
+        })
 }
 
-fn generate_bls_key() -> BlsKeyPair {
-    let mut ikm = [0u8; 64];
-    rand::thread_rng().fill_bytes(&mut ikm);
+fn write_private_key(dir: &PathBuf, id: usize, key: &dyn Identity, recipients: &[Box<dyn Recipient>]) {
+    // devnet-reporter-01-bls-priv-key.age
+    let mut filename = dir.join(format!("reporter-{:03}-{}-priv-key", id, key.key_type()));
 
-    let sk = BlsPrivateKey::key_gen(&ikm, &[]).expect("Failed to generate secret key");
-    let pk = sk.sk_to_pk();
+    let private_key = key.private_key();
 
-    BlsKeyPair {
-        private_key: encode(sk.to_bytes()),
-        public_key: encode(pk.to_bytes()),
+    if recipients.is_empty() {
+        write(&filename, private_key).expect("Failed to write private key");
+    } else {
+        filename.set_extension("age");
+        write_encrypted_file(filename, private_key, recipients)
+            .expect("Failed to write encrypted private key");
     }
 }
 
-struct EthereumKeyPair {
-    private_key: String,
-    address: String,
+fn write_encrypted_file<Data>(
+    path: PathBuf,
+    data: Data,
+    recipients: &[Box<dyn Recipient>],
+) -> Result<()>
+where
+    Data: AsRef<[u8]>,
+{
+    let mut file = File::create(&path)?;
+    let encryptor = Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref()))?;
+    let mut writer = encryptor.wrap_output(&mut file)?;
+
+    writer.write_all(data.as_ref())?;
+    writer.finish()?;
+    Ok(())
 }
 
-fn generate_ethereum_key() -> EthereumKeyPair {
-    let signing_key = EcdsaPrivateKey::random(&mut rand::thread_rng());
-    let verifying_key = *signing_key.verifying_key();
-    EthereumKeyPair {
-        private_key: encode_prefixed(signing_key.to_bytes()),
-        address: ethereum_address_from_public_key(&verifying_key),
-    }
-}
 
-fn ethereum_address_from_public_key(public_key: &EcdsaPublicKey) -> String {
-    let public_key_bytes = public_key.to_encoded_point(false);
-    let public_key_bytes = &public_key_bytes.as_bytes()[1..]; // Remove the 0x04 prefix
 
-    let mut hasher = Keccak::v256();
-    hasher.update(public_key_bytes);
-    let mut hash = [0u8; 32];
-    hasher.finalize(&mut hash);
 
-    encode_prefixed(&hash[12..])
-}
