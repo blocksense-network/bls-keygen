@@ -10,6 +10,8 @@ pub struct BlsKeyPair {
     public_key: String,
 }
 
+pub const MULTIFORMATS_BLS_PUBKYE_PREFIX: &str = "ea30";
+
 impl Identity for BlsKeyPair {
     fn private_key(&self) -> &str {
         &self.private_key
@@ -32,7 +34,7 @@ impl Identity for BlsKeyPair {
 
         BlsKeyPair {
             private_key: encode(sk.to_bytes()),
-            public_key: encode(pk.to_bytes()),
+            public_key: format!("{MULTIFORMATS_BLS_PUBKYE_PREFIX}{0}", encode(pk.to_bytes())),
         }
     }
 }
